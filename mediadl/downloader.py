@@ -77,6 +77,20 @@ class Downloader:
         """Disable cookie extraction."""
         self.cookie_browser = None
 
+    def _get_cookie_args(self) -> tuple[str, ...] | None:
+        """Resolve the browser and profile arguments for yt-dlp cookiesfrombrowser."""
+        if not self.cookie_browser:
+            return None
+
+        if self.cookie_browser == "coccoc":
+            from mediadl.utils import get_coccoc_profile_path
+            path = get_coccoc_profile_path()
+            if path:
+                return ("chrome", path)
+            return ("chrome",)
+
+        return (self.cookie_browser,)
+
     async def extract_info(self, url: str) -> MediaInfo:
         """Extract media information from a URL without downloading.
 
@@ -105,8 +119,9 @@ class Downloader:
         }
 
         # Optionally inject browser cookies
-        if self.cookie_browser:
-            ydl_opts["cookiesfrombrowser"] = (self.cookie_browser,)
+        cookie_args = self._get_cookie_args()
+        if cookie_args:
+            ydl_opts["cookiesfrombrowser"] = cookie_args
 
         loop = asyncio.get_running_loop()
         info = await loop.run_in_executor(None, self._extract_sync, url, ydl_opts)
@@ -419,8 +434,9 @@ class Downloader:
         }
 
         # Optionally inject browser cookies
-        if self.cookie_browser:
-            ydl_opts["cookiesfrombrowser"] = (self.cookie_browser,)
+        cookie_args = self._get_cookie_args()
+        if cookie_args:
+            ydl_opts["cookiesfrombrowser"] = cookie_args
 
         # Only merge to mp4 if downloading video; audio stays as m4a/webm
         if not is_audio_only:

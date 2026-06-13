@@ -464,3 +464,18 @@ def get_available_browsers() -> list[str]:
             available.append(browser)
 
     return available
+
+
+def get_coccoc_profile_path() -> str | None:
+    """Get the path to Cốc Cốc User Data directory if it exists."""
+    if sys.platform != "win32":
+        return None
+    home = os.path.expanduser("~")
+    possible_paths = [
+        os.path.join(home, r"AppData\Local\CocCoc\Browser\User Data"),
+        os.path.join(home, r"AppData\Local\CocCoc\Browser Beta\User Data"),
+    ]
+    for path in possible_paths:
+        if os.path.isdir(path):
+            return path
+    return None
