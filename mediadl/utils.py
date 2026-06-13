@@ -14,8 +14,33 @@ CHROME_UA = (
     "Chrome/125.0.0.0 Safari/537.36"
 )
 
-# Browsers supported for cookie extraction
-SUPPORTED_BROWSERS = ["chrome", "firefox", "edge", "opera", "safari", "brave", "chromium"]
+# Browsers supported by yt-dlp for cookie extraction (yt-dlp internal names)
+SUPPORTED_BROWSERS = [
+    "chrome",
+    "firefox",
+    "edge",
+    "coccoc",
+    "brave",
+    "opera",
+    "vivaldi",
+    "chromium",
+    "safari",
+    "whale",
+]
+
+# Human-readable display names for each yt-dlp browser identifier
+BROWSER_DISPLAY_NAMES: dict[str, str] = {
+    "chrome":   "Google Chrome",
+    "firefox":  "Mozilla Firefox",
+    "edge":     "Microsoft Edge",
+    "coccoc":   "Cốc Cốc",
+    "brave":    "Brave",
+    "opera":    "Opera",
+    "vivaldi":  "Vivaldi",
+    "chromium": "Chromium",
+    "safari":   "Safari",
+    "whale":    "NAVER Whale",
+}
 
 
 # Platform detection patterns
@@ -311,31 +336,41 @@ def get_platform_headers(url: str) -> dict:
 
 
 def get_available_browsers() -> list[str]:
-    """Return list of browsers whose cookies can be extracted on the current OS.
+    """Scan the current machine and return yt-dlp browser names that are installed.
 
-    Checks which browsers are actually installed by looking for their executables
-    or profile directories.
+    Detection strategy (in order):
+    1. Executable on PATH
+    2. Common Windows install paths under Program Files
+    3. User-local AppData paths (for per-user installs)
+    4. Chromium-based user profile directories
 
     Returns:
-        List of browser name strings (e.g. ['chrome', 'firefox', 'edge']).
+        Ordered list of yt-dlp browser name strings for browsers that were
+        found (e.g. ['edge', 'coccoc', 'chrome']).
     """
     available: list[str] = []
+    home = os.path.expanduser("~")
 
-    # Executable names per browser (checked on PATH)
-    exe_map = {
-        "chrome": ["google-chrome", "chrome", "google-chrome-stable"],
-        "firefox": ["firefox"],
-        "edge": ["msedge", "microsoft-edge"],
-        "opera": ["opera"],
-        "brave": ["brave-browser", "brave"],
+    # ── PATH executable names ────────────────────────────────────
+    exe_map: dict[str, list[str]] = {
+        "chrome":   ["google-chrome", "google-chrome-stable", "chrome"],
+        "firefox":  ["firefox"],
+        "edge":     ["msedge", "microsoft-edge", "microsoft-edge-stable"],
+        "coccoc":   ["coccoc", "coc_coc_browser"],
+        "brave":    ["brave-browser", "brave"],
+        "opera":    ["opera"],
+        "vivaldi":  ["vivaldi", "vivaldi-stable"],
         "chromium": ["chromium", "chromium-browser"],
+        "safari":   ["safari"],
+        "whale":    ["whale"],
     }
 
-    # On Windows, also check common install paths
-    win_paths = {
+    # ── Windows install paths ────────────────────────────────────
+    win_absolute: dict[str, list[str]] = {
         "chrome": [
             r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            os.path.join(home, r"AppData\Local\Google\Chrome\Application\chrome.exe"),
         ],
         "firefox": [
             r"C:\Program Files\Mozilla Firefox\firefox.exe",
@@ -344,25 +379,87 @@ def get_available_browsers() -> list[str]:
         "edge": [
             r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
             r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            os.path.join(home, r"AppData\Local\Microsoft\Edge\Application\msedge.exe"),
+        ],
+        "coccoc": [
+            # System-wide install
+            r"C:\Program Files\CocCoc\Browser\Application\browser.exe",
+            r"C:\Program Files (x86)\CocCoc\Browser\Application\browser.exe",
+            # Per-user install — Stable
+            os.path.join(home, r"AppData\Local\CocCoc\Browser\Application\browser.exe"),
+            # Per-user install — Beta
+            os.path.join(home, r"AppData\Local\CocCoc\Browser Beta\Application\browser.exe"),
         ],
         "brave": [
             r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+            r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe",
+            os.path.join(home, r"AppData\Local\BraveSoftware\Brave-Browser\Application\brave.exe"),
         ],
+        "opera": [
+            r"C:\Program Files\Opera\launcher.exe",
+            r"C:\Program Files (x86)\Opera\launcher.exe",
+            os.path.join(home, r"AppData\Local\Programs\Opera\launcher.exe"),
+        ],
+        "vivaldi": [
+            r"C:\Program Files\Vivaldi\Application\vivaldi.exe",
+            r"C:\Program Files (x86)\Vivaldi\Application\vivaldi.exe",
+            os.path.join(home, r"AppData\Local\Vivaldi\Application\vivaldi.exe"),
+        ],
+        "chromium": [
+            r"C:\Program Files\Chromium\Application\chrome.exe",
+            os.path.join(home, r"AppData\Local\Chromium\Application\chrome.exe"),
+        ],
+        "whale": [
+            r"C:\Program Files\Naver\Naver Whale\whale.exe",
+            os.path.join(home, r"AppData\Local\Naver\Naver Whale\whale.exe"),
+        ],
+    }
+
+    # ── Cookie/profile profile dirs (fallback: browser is installed if
+    #   its profile directory exists even if exe path is non-standard) ──
+    win_profile_dirs: dict[str, list[str]] = {
+        "chrome":   [os.path.join(home, r"AppData\Local\Google\Chrome\User Data")],
+        "edge":     [os.path.join(home, r"AppData\Local\Microsoft\Edge\User Data")],
+        "coccoc":   [
+            os.path.join(home, r"AppData\Local\CocCoc\Browser\User Data"),
+            os.path.join(home, r"AppData\Local\CocCoc\Browser Beta\User Data"),
+            # Root dir fallback: any CocCoc install creates this dir
+            os.path.join(home, r"AppData\Local\CocCoc"),
+        ],
+        "brave":    [os.path.join(home, r"AppData\Local\BraveSoftware\Brave-Browser\User Data")],
+        "opera":    [
+            os.path.join(home, r"AppData\Roaming\Opera Software\Opera Stable"),
+            os.path.join(home, r"AppData\Local\Programs\Opera"),
+        ],
+        "vivaldi":  [os.path.join(home, r"AppData\Local\Vivaldi\User Data")],
+        "chromium": [os.path.join(home, r"AppData\Local\Chromium\User Data")],
+        "whale":    [os.path.join(home, r"AppData\Local\Naver\Naver Whale\User Data")],
+        "firefox":  [os.path.join(home, r"AppData\Roaming\Mozilla\Firefox\Profiles")],
     }
 
     for browser in SUPPORTED_BROWSERS:
         found = False
-        # Check PATH executables
+
+        # 1. Check PATH
         for exe in exe_map.get(browser, [browser]):
             if shutil.which(exe):
                 found = True
                 break
-        # Check Windows install paths
+
+        # 2. Check absolute Windows paths
         if not found and sys.platform == "win32":
-            for path in win_paths.get(browser, []):
+            for path in win_absolute.get(browser, []):
                 if os.path.exists(path):
                     found = True
                     break
+
+        # 3. Check profile directories (browser is usable even if exe moved)
+        if not found and sys.platform == "win32":
+            for prof_dir in win_profile_dirs.get(browser, []):
+                if os.path.isdir(prof_dir):
+                    found = True
+                    break
+
         if found:
             available.append(browser)
 

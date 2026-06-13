@@ -29,6 +29,7 @@ from textual.widgets import (
 from mediadl import __version__
 from mediadl.downloader import Downloader, MediaInfo
 from mediadl.utils import (
+    BROWSER_DISPLAY_NAMES,
     detect_platform,
     format_eta,
     format_size,
@@ -101,7 +102,11 @@ class MediaDLApp(App):
 
     def _cookie_status_label(self) -> str:
         if self.downloader.cookie_browser:
-            return f"[bold #a6e3a1]🍪 Cookie: {self.downloader.cookie_browser.capitalize()}[/bold #a6e3a1]"
+            display = BROWSER_DISPLAY_NAMES.get(
+                self.downloader.cookie_browser,
+                self.downloader.cookie_browser.capitalize(),
+            )
+            return f"[bold #a6e3a1]🍪 Cookie: {display}[/bold #a6e3a1]"
         return "[dim #6c7086]🍪 Cookie: Off[/dim #6c7086]"
 
     def _ffmpeg_status_label(self) -> str:
@@ -151,7 +156,11 @@ class MediaDLApp(App):
         # ── Cookie settings row (hidden until Ctrl+K)
         with Horizontal(id="cookie-container", classes="--hidden"):
             yield Label("  🍪 Cookie từ browser:", id="cookie-label")
-            browser_options = [(b.capitalize(), b) for b in self._available_browsers]
+            # Build (display_name, yt_dlp_name) option tuples from detected browsers
+            browser_options = [
+                (BROWSER_DISPLAY_NAMES.get(b, b.capitalize()), b)
+                for b in self._available_browsers
+            ]
             if not browser_options:
                 browser_options = [("Không tìm thấy browser", "__none__")]
             yield Select(
