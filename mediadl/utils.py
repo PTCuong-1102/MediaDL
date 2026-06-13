@@ -225,3 +225,25 @@ def format_eta(seconds: float | None) -> str:
         hours = seconds // 3600
         mins = (seconds % 3600) // 60
         return f"{hours}h {mins:02d}m"
+
+
+def open_directory(path: str) -> None:
+    """Open a directory in the default system file manager (cross-platform)."""
+    import sys
+    import subprocess
+    if not os.path.exists(path):
+        return
+
+    if sys.platform == "win32":
+        os.startfile(path)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
+def is_ffmpeg_installed() -> bool:
+    """Check if FFmpeg is installed and accessible on the system PATH."""
+    import shutil
+    return shutil.which("ffmpeg") is not None
+

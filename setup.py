@@ -1,5 +1,6 @@
 import sys
 from cx_Freeze import setup, Executable
+from mediadl import __version__
 
 # Packages and files to include
 build_exe_options = {
@@ -55,7 +56,7 @@ base = None
 
 setup(
     name="MediaDL",
-    version="1.0.0",
+    version=__version__,
     author="MediaDL Team",
     description="Universal Media Downloader TUI",
     options={

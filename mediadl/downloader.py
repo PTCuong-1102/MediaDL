@@ -81,7 +81,7 @@ class Downloader:
             "no_color": True,
         }
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         info = await loop.run_in_executor(None, self._extract_sync, url, ydl_opts)
         return self._parse_info(url, info)
 
@@ -374,7 +374,7 @@ class Downloader:
                 "preferredcodec": "m4a",
             }]
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._download_sync, url, ydl_opts)
 
         return downloaded_file or save_dir

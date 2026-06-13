@@ -5,6 +5,8 @@ Main application module using Textual framework.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -23,6 +25,7 @@ from textual.widgets import (
     Static,
 )
 
+from mediadl import __version__
 from mediadl.downloader import Downloader, MediaInfo
 from mediadl.utils import (
     detect_platform,
@@ -31,7 +34,22 @@ from mediadl.utils import (
     format_speed,
     get_platform_icon,
     is_valid_url,
+    open_directory,
+    is_ffmpeg_installed,
 )
+
+
+# Setup logging
+log_dir = os.path.join(os.path.expanduser("~"), ".mediadl")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "mediadl.log")
+logging.basicConfig(
+    filename=log_file,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    encoding="utf-8",
+)
+logger = logging.getLogger("MediaDL")
 
 
 # ── ASCII Banner ────────────────────────────────────────────────
@@ -70,6 +88,8 @@ class MediaDLApp(App):
         self.current_info: MediaInfo | None = None
         self.is_downloading = False
         self.is_analyzing = False
+        self.analysis_worker = None
+        self.download_worker = None
 
     def compose(self) -> ComposeResult:
         """Build the UI layout."""
@@ -138,10 +158,18 @@ class MediaDLApp(App):
         """Initialize app on mount."""
         log = self.query_one("#log-panel", RichLog)
         log.border_title = "📋 Log"
-        log.write("[bold cyan]MediaDL v1.0.0[/bold cyan] - Universal Media Downloader")
+        log.write(f"[bold cyan]MediaDL v{__version__}[/bold cyan] - Universal Media Downloader")
         log.write(f"[dim]Download folder: {self.downloader.download_dir}[/dim]")
         log.write("[dim]──────────────────────────────────────────[/dim]")
         log.write("")
+
+        logger.info("MediaDL TUI started. Version: %s", __version__)
+        logger.info("Download folder: %s", self.downloader.download_dir)
+
+        # Check FFmpeg
+        if not is_ffmpeg_installed():
+            self._log_warning("Không tìm thấy FFmpeg! Việc gộp Video + Audio chất lượng cao có thể thất bại.")
+            logger.warning("FFmpeg is not installed or not in PATH.")
 
         # Focus the URL input
         self.query_one("#url-input", Input).focus()
@@ -180,18 +208,15 @@ class MediaDLApp(App):
             return
 
         row_key = event.row_key
-        table = self.query_one("#format-table", DataTable)
+        format_id = row_key.value
 
-        # Get the row index from row_key
-        row_index = None
-        for i, key in enumerate(table.rows):
-            if key == row_key:
-                row_index = i
-                break
+        selected_format = next(
+            (fmt for fmt in self.current_info.formats if fmt.format_id == format_id),
+            None
+        )
 
-        if row_index is not None and row_index < len(self.current_info.formats):
-            selected_format = self.current_info.formats[row_index]
-            self._start_download(selected_format.format_id, selected_format.quality)
+        if selected_format is not None:
+            self.download_worker = self._start_download(selected_format.format_id, selected_format.quality)
 
     # ── Core Logic ──────────────────────────────────────────────
 
@@ -216,7 +241,7 @@ class MediaDLApp(App):
             self._log_warning("Đang tải... vui lòng đợi hoàn thành hoặc nhấn Esc để hủy.")
             return
 
-        self._analyze_url(url)
+        self.analysis_worker = self._analyze_url(url)
 
     @work(exclusive=True, thread=False)
     async def _analyze_url(self, url: str) -> None:
@@ -236,6 +261,7 @@ class MediaDLApp(App):
         log.write(f"[bold]🔍 Đang phân tích URL...[/bold]")
         log.write(f"[dim]   {url}[/dim]")
         log.write(f"   Platform: {icon} [bold]{platform}[/bold]")
+        logger.info("Starting analysis of URL: %s", url)
 
         try:
             info = await self.downloader.extract_info(url)
@@ -252,12 +278,17 @@ class MediaDLApp(App):
             log.write(f"   👤 {info.uploader} | ⏱ {info.duration}")
             log.write(f"   📊 Tìm thấy [bold cyan]{len(info.formats)}[/bold cyan] định dạng")
             log.write(f"[bold yellow]👆 Chọn định dạng từ bảng phía trên rồi nhấn Enter để tải[/bold yellow]")
+            logger.info("URL analyzed successfully: %s", info.title)
 
+        except asyncio.CancelledError:
+            self._log_warning("Đã hủy phân tích URL.")
+            logger.info("URL analysis worker was cancelled.")
         except Exception as e:
             error_msg = str(e)
+            logger.error("URL analysis failed: %s", error_msg, exc_info=True)
             # Clean up yt-dlp error messages
             if "is not a valid URL" in error_msg:
-                self._log_error(f"URL không hợp lệ hoặc không được hỗ trợ")
+                self._log_error("URL không hợp lệ hoặc không được hỗ trợ")
             elif "Video unavailable" in error_msg:
                 self._log_error("Video không khả dụng (có thể đã bị xóa hoặc ở chế độ riêng tư)")
             elif "Sign in" in error_msg:
@@ -356,6 +387,7 @@ class MediaDLApp(App):
         log.write(f"\n[bold green]⬇ Bắt đầu tải...[/bold green]")
         log.write(f"   Định dạng: [bold]{quality}[/bold] | Format ID: {format_id}")
         log.write(f"   Lưu vào: [dim]{self.downloader.download_dir}[/dim]")
+        logger.info("Starting download of format %s (quality %s) to %s", format_id, quality, self.downloader.download_dir)
 
         last_percent = -1
 
@@ -404,16 +436,23 @@ class MediaDLApp(App):
             log.write(f"[bold green]✅ Tải thành công![/bold green]")
             log.write(f"   📁 {filepath}")
             progress_status.update(f"  ✅ Hoàn thành! File: {os.path.basename(str(filepath))}")
+            logger.info("Download completed successfully: %s", filepath)
 
+        except asyncio.CancelledError:
+            self._log_warning("Đã hủy tải xuống.")
+            progress_status.update("  ❌ Đã hủy tải xuống!")
+            logger.info("Download worker was cancelled.")
         except Exception as e:
             error_msg = str(e)
             self._log_error(f"Lỗi tải: {error_msg[:150]}")
             progress_status.update(f"  ❌ Tải thất bại!")
+            logger.error("Download failed: %s", error_msg, exc_info=True)
 
         finally:
             self.is_downloading = False
 
-            # Hide progress bar after a moment
+            # Wait 2 seconds before hiding progress bar so the user can see the status
+            await asyncio.sleep(2.0)
             progress_container.add_class("--hidden")
             progress_bar.update(progress=0)
 
@@ -430,16 +469,19 @@ class MediaDLApp(App):
         """Write an error message to the log."""
         log = self.query_one("#log-panel", RichLog)
         log.write(f"[bold red]❌ {message}[/bold red]")
+        logger.error(message)
 
     def _log_warning(self, message: str) -> None:
         """Write a warning message to the log."""
         log = self.query_one("#log-panel", RichLog)
         log.write(f"[bold yellow]⚠ {message}[/bold yellow]")
+        logger.warning(message)
 
     def _log_success(self, message: str) -> None:
         """Write a success message to the log."""
         log = self.query_one("#log-panel", RichLog)
         log.write(f"[bold green]✅ {message}[/bold green]")
+        logger.info(message)
 
     # ── Save Directory Methods ──────────────────────────────────
 
@@ -489,6 +531,7 @@ class MediaDLApp(App):
         self.query_one("#savedir-input-container").add_class("--hidden")
         log = self.query_one("#log-panel", RichLog)
         log.write(f"[green]✅ Đã đổi thư mục lưu:[/green] [bold]{new_path}[/bold]")
+        logger.info("Save directory changed to: %s", new_path)
 
         self.query_one("#url-input", Input).focus()
 
@@ -503,20 +546,31 @@ class MediaDLApp(App):
         log = self.query_one("#log-panel", RichLog)
         log.clear()
         log.write("[dim]Log cleared.[/dim]")
+        logger.info("TUI log cleared.")
 
     def action_open_folder(self) -> None:
-        """Open the download folder in Windows Explorer."""
+        """Open the download folder in the default system explorer."""
         download_dir = self.downloader.download_dir
         if os.path.exists(download_dir):
-            os.startfile(download_dir)
+            open_directory(download_dir)
             log = self.query_one("#log-panel", RichLog)
             log.write(f"[dim]📂 Mở thư mục: {download_dir}[/dim]")
+            logger.info("Opened download directory: %s", download_dir)
 
     def action_cancel(self) -> None:
         """Cancel current operation and reset UI."""
         if self.is_analyzing or self.is_downloading:
             log = self.query_one("#log-panel", RichLog)
             log.write("[yellow]⚠ Đang hủy...[/yellow]")
+            logger.info("Cancel requested. Cancelling workers.")
+
+            if self.analysis_worker is not None:
+                self.analysis_worker.cancel()
+                self.analysis_worker = None
+            if self.download_worker is not None:
+                self.download_worker.cancel()
+                self.download_worker = None
+
             self.is_analyzing = False
             self.is_downloading = False
 
