@@ -81,11 +81,11 @@ class MediaDLApp(App):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=True, priority=True),
-        Binding("ctrl+s", "change_folder", "Save Folder", show=True),
-        Binding("ctrl+k", "toggle_cookie", "Cookies", show=True),
-        Binding("ctrl+l", "clear_log", "Clear Log", show=True),
-        Binding("ctrl+o", "open_folder", "Open Folder", show=True),
-        Binding("escape", "cancel", "Cancel", show=True),
+        Binding("ctrl+s", "change_folder", "Save Folder", show=True, priority=True),
+        Binding("ctrl+k", "toggle_cookie", "Cookies", show=True, priority=True),
+        Binding("ctrl+l", "clear_log", "Clear Log", show=True, priority=True),
+        Binding("ctrl+o", "open_folder", "Open Folder", show=True, priority=True),
+        Binding("escape", "cancel", "Cancel", show=True, priority=True),
     ]
 
     def __init__(self):
@@ -664,6 +664,7 @@ class MediaDLApp(App):
         container = self.query_one("#cookie-container")
         if "--hidden" in container.classes:
             container.remove_class("--hidden")
+            self.query_one("#cookie-select", Select).focus()
             # Show helpful message first time
             if not self._available_browsers:
                 self._log_warning(
@@ -672,7 +673,7 @@ class MediaDLApp(App):
                 )
         else:
             container.add_class("--hidden")
-        self.query_one("#url-input", Input).focus()
+            self.query_one("#url-input", Input).focus()
 
     def action_clear_log(self) -> None:
         log = self.query_one("#log-panel", RichLog)
