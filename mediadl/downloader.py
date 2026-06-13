@@ -14,6 +14,7 @@ from mediadl.utils import (
     format_size,
     get_default_download_dir,
     get_platform_icon,
+    get_platform_headers,
     sanitize_filename,
 )
 
@@ -61,6 +62,20 @@ class Downloader:
         """
         self.download_dir = download_dir or get_default_download_dir()
         os.makedirs(self.download_dir, exist_ok=True)
+        # Optional browser name for cookie extraction (e.g. 'chrome', 'firefox')
+        self.cookie_browser: str | None = None
+
+    def set_cookie_browser(self, browser: str) -> None:
+        """Enable cookie extraction from the specified browser.
+
+        Args:
+            browser: Browser name, e.g. 'chrome', 'firefox', 'edge'.
+        """
+        self.cookie_browser = browser.lower()
+
+    def clear_cookie_browser(self) -> None:
+        """Disable cookie extraction."""
+        self.cookie_browser = None
 
     async def extract_info(self, url: str) -> MediaInfo:
         """Extract media information from a URL without downloading.
@@ -79,7 +94,18 @@ class Downloader:
             "no_warnings": True,
             "extract_flat": False,
             "no_color": True,
+            # Browser-like headers to bypass bot detection
+            "http_headers": get_platform_headers(url),
+            # Bypass basic geo restrictions
+            "geo_bypass": True,
+            # Retry on transient network errors
+            "extractor_retries": 3,
+            "socket_timeout": 30,
         }
+
+        # Optionally inject browser cookies
+        if self.cookie_browser:
+            ydl_opts["cookiesfrombrowser"] = (self.cookie_browser,)
 
         loop = asyncio.get_running_loop()
         info = await loop.run_in_executor(None, self._extract_sync, url, ydl_opts)
@@ -91,12 +117,32 @@ class Downloader:
             return ydl.extract_info(url, download=False)
 
     def _parse_info(self, url: str, info: dict) -> MediaInfo:
-        """Parse raw yt-dlp info dict into MediaInfo."""
+        """Parse raw yt-dlp info dict into MediaInfo.
+
+        Handles both single videos and playlist entries (uses first entry).
+        """
         platform = detect_platform(url)
         platform_icon = get_platform_icon(platform)
 
-        # Extract formats
-        formats = self._parse_formats(info.get("formats", []))
+        # Handle playlist: if yt-dlp returned a playlist, use the first entry
+        entry_type = info.get("_type", "")
+        if entry_type in ("playlist", "multi_video"):
+            entries = info.get("entries") or []
+            if entries:
+                # Use first entry but signal it's a playlist
+                info = entries[0] or info
+
+        # Normalise: some extractors (TikTok, Instagram) put the only format
+        # directly in the top-level dict rather than inside a 'formats' list.
+        raw_formats = info.get("formats") or []
+        if not raw_formats:
+            # Build a synthetic single-format entry from the top-level dict
+            vcodec = info.get("vcodec", "none")
+            acodec = info.get("acodec", "none")
+            if vcodec != "none" or acodec != "none":
+                raw_formats = [info]
+
+        formats = self._parse_formats(raw_formats)
 
         return MediaInfo(
             url=url,
@@ -104,7 +150,7 @@ class Downloader:
             platform=platform,
             platform_icon=platform_icon,
             duration=format_duration(info.get("duration")),
-            uploader=info.get("uploader", info.get("channel", "Unknown")),
+            uploader=info.get("uploader", info.get("channel", info.get("creator", "Unknown"))),
             description=(info.get("description", "") or "")[:200],
             thumbnail=info.get("thumbnail", ""),
             formats=formats,
@@ -362,7 +408,18 @@ class Downloader:
             # Windows-safe filenames
             "restrictfilenames": False,
             "windowsfilenames": True,
+            # Browser-like headers to bypass bot detection
+            "http_headers": get_platform_headers(url),
+            # Bypass basic geo restrictions
+            "geo_bypass": True,
+            # Retry on transient errors
+            "retries": 5,
+            "socket_timeout": 60,
         }
+
+        # Optionally inject browser cookies
+        if self.cookie_browser:
+            ydl_opts["cookiesfrombrowser"] = (self.cookie_browser,)
 
         # Only merge to mp4 if downloading video; audio stays as m4a/webm
         if not is_audio_only:

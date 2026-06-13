@@ -22,6 +22,7 @@ from textual.widgets import (
     Label,
     ProgressBar,
     RichLog,
+    Select,
     Static,
 )
 
@@ -32,14 +33,15 @@ from mediadl.utils import (
     format_eta,
     format_size,
     format_speed,
+    get_available_browsers,
     get_platform_icon,
+    is_ffmpeg_installed,
     is_valid_url,
     open_directory,
-    is_ffmpeg_installed,
 )
 
 
-# Setup logging
+# ── Logging setup ────────────────────────────────────────────────
 log_dir = os.path.join(os.path.expanduser("~"), ".mediadl")
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "mediadl.log")
@@ -52,31 +54,34 @@ logging.basicConfig(
 logger = logging.getLogger("MediaDL")
 
 
-# ── ASCII Banner ────────────────────────────────────────────────
-BANNER = r"""
- ╔╦╗╔═╗╔╦╗╦╔═╗╔╦╗╦  
- ║║║║╣  ║║║╠═╣ ║║║  
- ╩ ╩╚═╝═╩╝╩ ╩═╩╝╩═╝
-  Universal Media Downloader
+# ── ASCII Banner ─────────────────────────────────────────────────
+BANNER = """\
+ ╔╦╗╔═╗╔╦╗╦╔═╗╔╦╗╦
+ ║║║║╣  ║║║╠═╣ ║║║
+ ╩ ╩╚═╝═╩╝╩ ╩═╩╝╩═╝  v{version}  ✦ Universal Media Downloader"""
+
+WELCOME_TEXT = """\
+[bold #cba6f7]Dán URL vào ô phía trên rồi nhấn [green]⏎ Enter[/green] hoặc nút [green]Analyze[/green] để bắt đầu.[/bold #cba6f7]
+
+[dim #6c7086]▶  YouTube  •  TikTok  •  Facebook  •  Instagram  •  Twitter/X[/dim #6c7086]
+[dim #6c7086]▶  Reddit   •  Vimeo   •  Twitch    •  SoundCloud •  1000+ sites[/dim #6c7086]
+
+[dim #45475a]💡 Tip: Nếu video yêu cầu đăng nhập, hãy bật Cookie qua [bold #f9e2af]Ctrl+K[/bold #f9e2af][/dim #45475a]\
 """
-
-WELCOME_TEXT = """[bold cyan]Dán URL vào ô phía trên rồi nhấn Enter hoặc nút [green]⏎ Analyze[/green] để bắt đầu.[/bold cyan]
-
-[dim]Hỗ trợ: YouTube • TikTok • Facebook • Instagram • Twitter/X
-Reddit • Vimeo • Dailymotion • SoundCloud • 1000+ trang khác[/dim]"""
 
 
 class MediaDLApp(App):
     """Main TUI application for MediaDL."""
 
-    TITLE = "MediaDL - Universal Media Downloader"
-    SUB_TITLE = "yt-dlp powered"
+    TITLE = "MediaDL"
+    SUB_TITLE = f"v{__version__} — Universal Media Downloader"
 
     CSS_PATH = "styles.tcss"
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=True, priority=True),
         Binding("ctrl+s", "change_folder", "Save Folder", show=True),
+        Binding("ctrl+k", "toggle_cookie", "Cookies", show=True),
         Binding("ctrl+l", "clear_log", "Clear Log", show=True),
         Binding("ctrl+o", "open_folder", "Open Folder", show=True),
         Binding("escape", "cancel", "Cancel", show=True),
@@ -90,41 +95,81 @@ class MediaDLApp(App):
         self.is_analyzing = False
         self.analysis_worker = None
         self.download_worker = None
+        self._available_browsers = get_available_browsers()
+
+    # ── Helpers ──────────────────────────────────────────────────
+
+    def _cookie_status_label(self) -> str:
+        if self.downloader.cookie_browser:
+            return f"[bold #a6e3a1]🍪 Cookie: {self.downloader.cookie_browser.capitalize()}[/bold #a6e3a1]"
+        return "[dim #6c7086]🍪 Cookie: Off[/dim #6c7086]"
+
+    def _ffmpeg_status_label(self) -> str:
+        if is_ffmpeg_installed():
+            return "[dim #6c7086]⚙ FFmpeg: OK[/dim #6c7086]"
+        return "[bold #f38ba8]⚠ FFmpeg: Missing[/bold #f38ba8]"
+
+    # ── Layout ───────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
         """Build the UI layout."""
         # ── Header
-        yield Static(BANNER, id="app-header")
+        yield Static(
+            BANNER.format(version=__version__),
+            id="app-header",
+        )
 
-        # ── URL Input
+        # ── Status bar (FFmpeg + Cookie)
+        with Horizontal(id="status-bar"):
+            yield Label("", id="status-ffmpeg")
+            yield Label(" │ ", id="status-sep")
+            yield Label("", id="status-cookie")
+
+        # ── URL Input row
         with Horizontal(id="url-container"):
             yield Input(
-                placeholder="  Dán URL video vào đây... (YouTube, TikTok, Facebook, Instagram, ...)",
+                placeholder="  Dán URL vào đây... (YouTube, TikTok, Facebook, Instagram, Vimeo, ...)",
                 id="url-input",
             )
             yield Button("⏎ Analyze", id="analyze-btn", variant="success")
 
-        # ── Save Directory (always visible)
+        # ── Save-dir row (always visible)
         with Horizontal(id="savedir-container"):
             yield Label("  📂 Lưu vào:", id="savedir-icon")
             yield Label(self.downloader.download_dir, id="savedir-label")
             yield Button("✏ Đổi", id="savedir-btn", variant="default")
 
-        # ── Save Directory Input (hidden, toggled by Ctrl+S or button)
+        # ── Save-dir input row (hidden until toggled)
         with Horizontal(id="savedir-input-container", classes="--hidden"):
             yield Input(
-                placeholder="  Nhập đường dẫn thư mục lưu...",
+                placeholder="  Nhập đường dẫn thư mục mới...",
                 id="savedir-input",
             )
             yield Button("✔ OK", id="savedir-ok-btn", variant="success")
+            yield Button("✖ Hủy", id="savedir-cancel-btn", variant="error")
 
-        # ── Main Content Area
+        # ── Cookie settings row (hidden until Ctrl+K)
+        with Horizontal(id="cookie-container", classes="--hidden"):
+            yield Label("  🍪 Cookie từ browser:", id="cookie-label")
+            browser_options = [(b.capitalize(), b) for b in self._available_browsers]
+            if not browser_options:
+                browser_options = [("Không tìm thấy browser", "__none__")]
+            yield Select(
+                options=browser_options,
+                id="cookie-select",
+                allow_blank=True,
+                prompt="-- Tắt cookie --",
+            )
+            yield Button("✔ Áp dụng", id="cookie-ok-btn", variant="success")
+            yield Button("✖ Đóng", id="cookie-close-btn", variant="default")
+
+        # ── Main content
         with Vertical(id="main-content"):
-            # Welcome message (shown initially)
+            # Welcome panel
             with Container(id="welcome-panel"):
                 yield Static(WELCOME_TEXT, id="welcome-text")
 
-            # Info panel (hidden initially)
+            # Media info panel (hidden initially)
             with Container(id="info-panel", classes="--hidden"):
                 with Horizontal(classes="info-row"):
                     yield Label("  Platform:", classes="info-label")
@@ -139,7 +184,7 @@ class MediaDLApp(App):
                     yield Label("  Duration:", classes="info-label")
                     yield Label("", id="info-duration", classes="info-value")
 
-            # Format selection table (hidden initially)
+            # Format table (hidden initially)
             with Container(id="format-container", classes="--hidden"):
                 yield DataTable(id="format-table", cursor_type="row", zebra_stripes=True)
 
@@ -155,97 +200,111 @@ class MediaDLApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        """Initialize app on mount."""
+        """Initialize the app after the DOM is ready."""
         log = self.query_one("#log-panel", RichLog)
         log.border_title = "📋 Log"
-        log.write(f"[bold cyan]MediaDL v{__version__}[/bold cyan] - Universal Media Downloader")
+        log.write(f"[bold #cba6f7]MediaDL v{__version__}[/bold #cba6f7]  Universal Media Downloader")
         log.write(f"[dim]Download folder: {self.downloader.download_dir}[/dim]")
-        log.write("[dim]──────────────────────────────────────────[/dim]")
+        log.write("[dim #45475a]──────────────────────────────────────────[/dim #45475a]")
         log.write("")
 
-        logger.info("MediaDL TUI started. Version: %s", __version__)
+        logger.info("MediaDL started. Version: %s", __version__)
         logger.info("Download folder: %s", self.downloader.download_dir)
 
-        # Check FFmpeg
-        if not is_ffmpeg_installed():
-            self._log_warning("Không tìm thấy FFmpeg! Việc gộp Video + Audio chất lượng cao có thể thất bại.")
-            logger.warning("FFmpeg is not installed or not in PATH.")
+        # Update status labels
+        self._refresh_status_bar()
 
-        # Focus the URL input
+        # Warn if FFmpeg missing
+        if not is_ffmpeg_installed():
+            self._log_warning("FFmpeg không tìm thấy! Gộp Video+Audio chất lượng cao có thể thất bại.")
+            logger.warning("FFmpeg not found in PATH.")
+
+        if not self._available_browsers:
+            logger.info("No supported browsers detected for cookie extraction.")
+
+        # Focus URL input
         self.query_one("#url-input", Input).focus()
 
-    # ── Event Handlers ──────────────────────────────────────────
+    # ── Status bar ───────────────────────────────────────────────
+
+    def _refresh_status_bar(self) -> None:
+        """Update the status bar labels."""
+        self.query_one("#status-ffmpeg", Label).update(self._ffmpeg_status_label())
+        self.query_one("#status-cookie", Label).update(self._cookie_status_label())
+
+    # ── Event Handlers ───────────────────────────────────────────
 
     @on(Input.Submitted, "#url-input")
     def on_url_submitted(self, event: Input.Submitted) -> None:
-        """Handle Enter key in URL input."""
         self._start_analysis()
 
     @on(Button.Pressed, "#analyze-btn")
     def on_analyze_pressed(self, event: Button.Pressed) -> None:
-        """Handle Analyze button press."""
         self._start_analysis()
 
     @on(Button.Pressed, "#savedir-btn")
     def on_savedir_btn_pressed(self, event: Button.Pressed) -> None:
-        """Toggle the save directory input."""
         self._toggle_savedir_input()
 
     @on(Input.Submitted, "#savedir-input")
     def on_savedir_submitted(self, event: Input.Submitted) -> None:
-        """Handle Enter in save directory input."""
         self._apply_savedir()
 
     @on(Button.Pressed, "#savedir-ok-btn")
     def on_savedir_ok_pressed(self, event: Button.Pressed) -> None:
-        """Handle OK button for save directory."""
         self._apply_savedir()
+
+    @on(Button.Pressed, "#savedir-cancel-btn")
+    def on_savedir_cancel_pressed(self, event: Button.Pressed) -> None:
+        self.query_one("#savedir-input-container").add_class("--hidden")
+        self.query_one("#url-input", Input).focus()
+
+    @on(Button.Pressed, "#cookie-ok-btn")
+    def on_cookie_ok_pressed(self, event: Button.Pressed) -> None:
+        self._apply_cookie_setting()
+
+    @on(Button.Pressed, "#cookie-close-btn")
+    def on_cookie_close_pressed(self, event: Button.Pressed) -> None:
+        self.query_one("#cookie-container").add_class("--hidden")
+        self.query_one("#url-input", Input).focus()
 
     @on(DataTable.RowSelected, "#format-table")
     def on_format_selected(self, event: DataTable.RowSelected) -> None:
-        """Handle format selection from table."""
         if self.is_downloading or self.current_info is None:
             return
 
-        row_key = event.row_key
-        format_id = row_key.value
-
+        format_id = event.row_key.value
         selected_format = next(
             (fmt for fmt in self.current_info.formats if fmt.format_id == format_id),
-            None
+            None,
         )
-
         if selected_format is not None:
-            self.download_worker = self._start_download(selected_format.format_id, selected_format.quality)
+            self.download_worker = self._start_download(
+                selected_format.format_id, selected_format.quality
+            )
 
-    # ── Core Logic ──────────────────────────────────────────────
+    # ── Core Logic ───────────────────────────────────────────────
 
     def _start_analysis(self) -> None:
-        """Begin URL analysis."""
-        url_input = self.query_one("#url-input", Input)
-        url = url_input.value.strip()
+        url = self.query_one("#url-input", Input).value.strip()
 
         if not url:
             self._log_error("Vui lòng nhập URL!")
             return
-
         if not is_valid_url(url):
             self._log_error(f"URL không hợp lệ: {url}")
             return
-
         if self.is_analyzing:
             self._log_warning("Đang phân tích... vui lòng đợi.")
             return
-
         if self.is_downloading:
-            self._log_warning("Đang tải... vui lòng đợi hoàn thành hoặc nhấn Esc để hủy.")
+            self._log_warning("Đang tải... nhấn Esc để hủy trước.")
             return
 
         self.analysis_worker = self._analyze_url(url)
 
     @work(exclusive=True, thread=False)
     async def _analyze_url(self, url: str) -> None:
-        """Analyze URL in background worker."""
         log = self.query_one("#log-panel", RichLog)
         btn = self.query_one("#analyze-btn", Button)
 
@@ -253,99 +312,116 @@ class MediaDLApp(App):
         btn.label = "⏳ ..."
         btn.add_class("-analyzing")
 
-        # Detect platform
         platform = detect_platform(url)
         icon = get_platform_icon(platform)
 
-        log.write(f"\n[bold cyan]{'─' * 50}[/bold cyan]")
-        log.write(f"[bold]🔍 Đang phân tích URL...[/bold]")
-        log.write(f"[dim]   {url}[/dim]")
-        log.write(f"   Platform: {icon} [bold]{platform}[/bold]")
-        logger.info("Starting analysis of URL: %s", url)
+        log.write(f"\n[bold #585b70]{'─' * 52}[/bold #585b70]")
+        log.write(f"[bold]🔍 Đang phân tích...[/bold]")
+        log.write(f"[dim]   {url[:80]}{'…' if len(url) > 80 else ''}[/dim]")
+        log.write(f"   {icon} [bold #cba6f7]{platform}[/bold #cba6f7]")
+        if self.downloader.cookie_browser:
+            log.write(f"   [dim #a6e3a1]🍪 Cookie từ {self.downloader.cookie_browser.capitalize()}[/dim #a6e3a1]")
+        logger.info("Analyzing URL: %s (platform=%s)", url, platform)
 
         try:
             info = await self.downloader.extract_info(url)
             self.current_info = info
 
-            # Update info panel
             self._show_info_panel(info)
-
-            # Populate format table
             self._populate_format_table(info)
 
-            log.write(f"[green]✅ Phân tích thành công![/green]")
-            log.write(f"   📌 {info.title}")
-            log.write(f"   👤 {info.uploader} | ⏱ {info.duration}")
-            log.write(f"   📊 Tìm thấy [bold cyan]{len(info.formats)}[/bold cyan] định dạng")
-            log.write(f"[bold yellow]👆 Chọn định dạng từ bảng phía trên rồi nhấn Enter để tải[/bold yellow]")
-            logger.info("URL analyzed successfully: %s", info.title)
+            log.write(f"[bold #a6e3a1]✅ Phân tích thành công![/bold #a6e3a1]")
+            log.write(f"   📌 {info.title[:80]}")
+            log.write(f"   👤 {info.uploader}  ⏱ {info.duration}")
+            log.write(
+                f"   📊 Tìm thấy [bold #89b4fa]{len(info.formats)}[/bold #89b4fa] định dạng"
+            )
+            log.write(
+                "[bold #f9e2af]👆 Chọn định dạng trong bảng trên rồi nhấn Enter để tải[/bold #f9e2af]"
+            )
+            logger.info("Analysis OK: %s", info.title)
 
         except asyncio.CancelledError:
             self._log_warning("Đã hủy phân tích URL.")
-            logger.info("URL analysis worker was cancelled.")
+            logger.info("Analysis cancelled.")
         except Exception as e:
             error_msg = str(e)
-            logger.error("URL analysis failed: %s", error_msg, exc_info=True)
-            # Clean up yt-dlp error messages
-            if "is not a valid URL" in error_msg:
-                self._log_error("URL không hợp lệ hoặc không được hỗ trợ")
-            elif "Video unavailable" in error_msg:
-                self._log_error("Video không khả dụng (có thể đã bị xóa hoặc ở chế độ riêng tư)")
-            elif "Sign in" in error_msg:
-                self._log_error("Video yêu cầu đăng nhập để xem")
-            elif "geo" in error_msg.lower() or "country" in error_msg.lower():
-                self._log_error("Video bị chặn theo vùng địa lý")
-            else:
-                self._log_error(f"Lỗi phân tích: {error_msg[:150]}")
+            logger.error("Analysis failed: %s", error_msg, exc_info=True)
+            self._handle_extract_error(error_msg, platform)
 
         finally:
             self.is_analyzing = False
             btn.label = "⏎ Analyze"
             btn.remove_class("-analyzing")
 
+    def _handle_extract_error(self, error_msg: str, platform: str) -> None:
+        """Map yt-dlp error messages to user-friendly Vietnamese messages."""
+        msg_lower = error_msg.lower()
+
+        if "is not a valid url" in msg_lower or "unsupported url" in msg_lower:
+            self._log_error("URL không được hỗ trợ hoặc không hợp lệ.")
+        elif "video unavailable" in msg_lower or "this video is unavailable" in msg_lower:
+            self._log_error("Video không khả dụng (bị xóa hoặc bị ẩn riêng tư).")
+        elif "private" in msg_lower:
+            self._log_error("Video/bài đăng ở chế độ riêng tư.")
+            if not self.downloader.cookie_browser:
+                self._log_warning(
+                    f"💡 Thử bật Cookie từ browser của bạn qua [bold]Ctrl+K[/bold] để truy cập nội dung riêng tư."
+                )
+        elif "login" in msg_lower or "sign in" in msg_lower or "log in" in msg_lower:
+            self._log_error(f"Video yêu cầu đăng nhập ({platform}).")
+            if not self.downloader.cookie_browser:
+                self._log_warning(
+                    "💡 Nhấn [bold #f9e2af]Ctrl+K[/bold #f9e2af] để bật Cookie từ browser — "
+                    "app sẽ dùng session đăng nhập của bạn."
+                )
+        elif "geo" in msg_lower or "country" in msg_lower or "region" in msg_lower:
+            self._log_error("Video bị chặn theo vùng địa lý.")
+        elif "copyright" in msg_lower or "removed" in msg_lower:
+            self._log_error("Video bị xóa do vi phạm bản quyền.")
+        elif "403" in error_msg or "forbidden" in msg_lower:
+            self._log_error("Truy cập bị từ chối (403).")
+            if not self.downloader.cookie_browser:
+                self._log_warning("💡 Thử bật Cookie qua [bold]Ctrl+K[/bold].")
+        elif "429" in error_msg or "too many" in msg_lower:
+            self._log_error("Quá nhiều yêu cầu — bị giới hạn tốc độ (429). Thử lại sau ít phút.")
+        elif "network" in msg_lower or "connection" in msg_lower or "timeout" in msg_lower:
+            self._log_error("Lỗi mạng. Kiểm tra kết nối internet và thử lại.")
+        else:
+            self._log_error(f"Lỗi phân tích: {error_msg[:200]}")
+
     def _show_info_panel(self, info: MediaInfo) -> None:
-        """Show and populate the info panel."""
-        # Hide welcome, show info
         self.query_one("#welcome-panel").add_class("--hidden")
         self.query_one("#info-panel").remove_class("--hidden")
         self.query_one("#format-container").remove_class("--hidden")
 
-        # Set border title
-        info_panel = self.query_one("#info-panel")
-        info_panel.border_title = f"📋 Media Info"
-
-        # Update labels
+        self.query_one("#info-panel").border_title = "📋 Media Info"
         self.query_one("#info-platform", Label).update(
             f"{info.platform_icon} {info.platform}"
         )
-        # Truncate title if too long
-        title_display = info.title if len(info.title) <= 80 else info.title[:77] + "..."
+        title_display = info.title if len(info.title) <= 80 else info.title[:77] + "…"
         self.query_one("#info-title", Label).update(title_display)
         self.query_one("#info-uploader", Label).update(info.uploader)
         self.query_one("#info-duration", Label).update(info.duration)
 
     def _populate_format_table(self, info: MediaInfo) -> None:
-        """Fill the format table with available formats."""
         table = self.query_one("#format-table", DataTable)
         format_container = self.query_one("#format-container")
         format_container.border_title = (
-            f"🎯 Chọn định dạng ({len(info.formats)} kết quả) — Nhấn Enter để tải"
+            f"🎯 Chọn định dạng  ({len(info.formats)} kết quả)  — Enter để tải"
         )
 
-        # Fully reset table: clear rows AND columns, then re-add columns
-        # This ensures cursor/selection state is completely reset
         table.clear(columns=True)
         table.add_column("#", width=4, key="index")
         table.add_column("Quality", width=16, key="quality")
         table.add_column("Ext", width=6, key="ext")
         table.add_column("Size", width=10, key="size")
         table.add_column("Codec", width=16, key="codec")
-        table.add_column("Type", width=12, key="type")
+        table.add_column("Type", width=15, key="type")
 
         for i, fmt in enumerate(info.formats):
-            # Type column - make it clear what the output will be
             if fmt.format_id in ("bestvideo+bestaudio/best", "bestaudio/best"):
-                type_str = "⭐ Recommended" if fmt.has_video else "⭐ Best Audio"
+                type_str = "⭐ Best" if fmt.has_video else "⭐ Best Audio"
             elif fmt.has_video and fmt.has_audio:
                 type_str = "🎬 Video+Audio"
             elif fmt.has_video:
@@ -363,13 +439,11 @@ class MediaDLApp(App):
                 key=fmt.format_id,
             )
 
-        # Move cursor to first row and focus the table
         table.move_cursor(row=0)
         table.focus()
 
     @work(exclusive=True, thread=False)
     async def _start_download(self, format_id: str, quality: str) -> None:
-        """Start downloading in background worker."""
         if self.current_info is None:
             return
 
@@ -379,19 +453,17 @@ class MediaDLApp(App):
         progress_status = self.query_one("#progress-status", Label)
 
         self.is_downloading = True
-
-        # Show progress
         progress_container.remove_class("--hidden")
         progress_bar.update(progress=0)
 
-        log.write(f"\n[bold green]⬇ Bắt đầu tải...[/bold green]")
-        log.write(f"   Định dạng: [bold]{quality}[/bold] | Format ID: {format_id}")
-        log.write(f"   Lưu vào: [dim]{self.downloader.download_dir}[/dim]")
-        logger.info("Starting download of format %s (quality %s) to %s", format_id, quality, self.downloader.download_dir)
+        log.write(f"\n[bold #a6e3a1]⬇  Bắt đầu tải...[/bold #a6e3a1]")
+        log.write(f"   Định dạng: [bold]{quality}[/bold]  |  ID: [dim]{format_id}[/dim]")
+        log.write(f"   💾 {self.downloader.download_dir}")
+        logger.info("Download started: format=%s quality=%s", format_id, quality)
 
         last_percent = -1
 
-        def progress_hook(d):
+        def progress_hook(d: dict) -> None:
             nonlocal last_percent
             status = d.get("status", "")
 
@@ -406,24 +478,21 @@ class MediaDLApp(App):
                     if percent != last_percent:
                         last_percent = percent
                         self.call_from_thread(progress_bar.update, progress=percent)
-
                     speed_str = format_speed(speed)
                     eta_str = format_eta(eta)
                     size_str = f"{format_size(downloaded)} / {format_size(total)}"
-                    status_text = f"  ⬇ {size_str}  |  🚀 {speed_str}  |  ⏱ ETA: {eta_str}"
-                    self.call_from_thread(progress_status.update, status_text)
+                    self.call_from_thread(
+                        progress_status.update,
+                        f"  ⬇  {size_str}  │  🚀 {speed_str}  │  ⏱ ETA: {eta_str}",
+                    )
                 else:
-                    speed_str = format_speed(speed)
-                    size_str = format_size(downloaded)
-                    status_text = f"  ⬇ {size_str}  |  🚀 {speed_str}"
-                    self.call_from_thread(progress_status.update, status_text)
-
+                    self.call_from_thread(
+                        progress_status.update,
+                        f"  ⬇  {format_size(downloaded)}  │  🚀 {format_speed(speed)}",
+                    )
             elif status == "finished":
                 self.call_from_thread(progress_bar.update, progress=100)
-                self.call_from_thread(
-                    progress_status.update,
-                    "  ✅ Đang xử lý file..."
-                )
+                self.call_from_thread(progress_status.update, "  ✅ Đang xử lý file...")
 
         try:
             filepath = await self.downloader.download(
@@ -433,136 +502,147 @@ class MediaDLApp(App):
                 progress_callback=progress_hook,
             )
 
-            log.write(f"[bold green]✅ Tải thành công![/bold green]")
+            log.write(f"[bold #a6e3a1]✅ Tải thành công![/bold #a6e3a1]")
             log.write(f"   📁 {filepath}")
-            progress_status.update(f"  ✅ Hoàn thành! File: {os.path.basename(str(filepath))}")
-            logger.info("Download completed successfully: %s", filepath)
+            progress_status.update(
+                f"  ✅ Hoàn thành!  {os.path.basename(str(filepath))}"
+            )
+            logger.info("Download complete: %s", filepath)
 
         except asyncio.CancelledError:
             self._log_warning("Đã hủy tải xuống.")
-            progress_status.update("  ❌ Đã hủy tải xuống!")
-            logger.info("Download worker was cancelled.")
+            progress_status.update("  ❌ Đã hủy!")
+            logger.info("Download cancelled.")
         except Exception as e:
             error_msg = str(e)
-            self._log_error(f"Lỗi tải: {error_msg[:150]}")
-            progress_status.update(f"  ❌ Tải thất bại!")
+            self._log_error(f"Lỗi tải: {error_msg[:200]}")
+            progress_status.update("  ❌ Tải thất bại!")
             logger.error("Download failed: %s", error_msg, exc_info=True)
 
         finally:
             self.is_downloading = False
-
-            # Wait 2 seconds before hiding progress bar so the user can see the status
             await asyncio.sleep(2.0)
             progress_container.add_class("--hidden")
             progress_bar.update(progress=0)
 
-            # If we still have format info, reset table and let user pick again
             if self.current_info is not None:
                 self._populate_format_table(self.current_info)
-                log.write("[bold yellow]🔄 Chọn định dạng khác từ bảng phía trên, hoặc dán URL mới.[/bold yellow]")
+                log.write(
+                    "[bold #f9e2af]🔄 Chọn định dạng khác từ bảng trên, hoặc dán URL mới.[/bold #f9e2af]"
+                )
             else:
                 self.query_one("#url-input", Input).focus()
 
-    # ── Helper Methods ──────────────────────────────────────────
+    # ── Helper methods ───────────────────────────────────────────
 
     def _log_error(self, message: str) -> None:
-        """Write an error message to the log."""
-        log = self.query_one("#log-panel", RichLog)
-        log.write(f"[bold red]❌ {message}[/bold red]")
+        self.query_one("#log-panel", RichLog).write(f"[bold #f38ba8]❌ {message}[/bold #f38ba8]")
         logger.error(message)
 
     def _log_warning(self, message: str) -> None:
-        """Write a warning message to the log."""
-        log = self.query_one("#log-panel", RichLog)
-        log.write(f"[bold yellow]⚠ {message}[/bold yellow]")
+        self.query_one("#log-panel", RichLog).write(f"[bold #f9e2af]⚠  {message}[/bold #f9e2af]")
         logger.warning(message)
 
     def _log_success(self, message: str) -> None:
-        """Write a success message to the log."""
-        log = self.query_one("#log-panel", RichLog)
-        log.write(f"[bold green]✅ {message}[/bold green]")
+        self.query_one("#log-panel", RichLog).write(f"[bold #a6e3a1]✅ {message}[/bold #a6e3a1]")
         logger.info(message)
 
-    # ── Save Directory Methods ──────────────────────────────────
+    # ── Save-dir methods ─────────────────────────────────────────
 
     def _toggle_savedir_input(self) -> None:
-        """Show or hide the save directory input field."""
         container = self.query_one("#savedir-input-container")
         savedir_input = self.query_one("#savedir-input", Input)
-
         if "--hidden" in container.classes:
-            # Show input, pre-fill with current path
             container.remove_class("--hidden")
             savedir_input.value = self.downloader.download_dir
             savedir_input.focus()
         else:
-            # Hide input
             container.add_class("--hidden")
             self.query_one("#url-input", Input).focus()
 
     def _apply_savedir(self) -> None:
-        """Apply the new save directory from input."""
         savedir_input = self.query_one("#savedir-input", Input)
-        new_path = savedir_input.value.strip()
+        new_path = os.path.expanduser(savedir_input.value.strip())
 
         if not new_path:
             self._log_warning("Đường dẫn không được để trống!")
             return
-
-        # Expand user home shortcut
-        new_path = os.path.expanduser(new_path)
-
-        # Try to create directory if it doesn't exist
         try:
             os.makedirs(new_path, exist_ok=True)
         except OSError as e:
             self._log_error(f"Không thể tạo thư mục: {e}")
             return
-
         if not os.path.isdir(new_path):
-            self._log_error(f"Đường dẫn không phải là thư mục: {new_path}")
+            self._log_error(f"Không phải thư mục hợp lệ: {new_path}")
             return
 
-        # Apply new path
         self.downloader.download_dir = new_path
         self.query_one("#savedir-label", Label).update(new_path)
-
-        # Hide input and log
         self.query_one("#savedir-input-container").add_class("--hidden")
-        log = self.query_one("#log-panel", RichLog)
-        log.write(f"[green]✅ Đã đổi thư mục lưu:[/green] [bold]{new_path}[/bold]")
-        logger.info("Save directory changed to: %s", new_path)
-
+        self._log_success(f"Đã đổi thư mục lưu: {new_path}")
+        logger.info("Download dir changed to: %s", new_path)
         self.query_one("#url-input", Input).focus()
 
-    # ── Actions ─────────────────────────────────────────────────
+    # ── Cookie methods ───────────────────────────────────────────
+
+    def _apply_cookie_setting(self) -> None:
+        sel = self.query_one("#cookie-select", Select)
+        value = sel.value  # may be Select.BLANK or a browser string
+
+        if value is Select.BLANK or value == "__none__":
+            self.downloader.clear_cookie_browser()
+            self._log_success("Đã tắt Cookie — yt-dlp sẽ không dùng session browser.")
+        else:
+            self.downloader.set_cookie_browser(str(value))
+            self._log_success(
+                f"Đã bật Cookie từ [bold]{str(value).capitalize()}[/bold] — "
+                "nội dung yêu cầu đăng nhập sẽ được truy cập qua session browser của bạn."
+            )
+            logger.info("Cookie browser set to: %s", value)
+
+        self._refresh_status_bar()
+        self.query_one("#cookie-container").add_class("--hidden")
+        self.query_one("#url-input", Input).focus()
+
+    # ── Actions ──────────────────────────────────────────────────
 
     def action_change_folder(self) -> None:
-        """Toggle the save directory input (Ctrl+S)."""
         self._toggle_savedir_input()
 
+    def action_toggle_cookie(self) -> None:
+        container = self.query_one("#cookie-container")
+        if "--hidden" in container.classes:
+            container.remove_class("--hidden")
+            # Show helpful message first time
+            if not self._available_browsers:
+                self._log_warning(
+                    "Không tìm thấy browser nào được hỗ trợ trên hệ thống. "
+                    "Cài Chrome, Firefox hoặc Edge để dùng tính năng này."
+                )
+        else:
+            container.add_class("--hidden")
+        self.query_one("#url-input", Input).focus()
+
     def action_clear_log(self) -> None:
-        """Clear the log panel."""
         log = self.query_one("#log-panel", RichLog)
         log.clear()
         log.write("[dim]Log cleared.[/dim]")
         logger.info("TUI log cleared.")
 
     def action_open_folder(self) -> None:
-        """Open the download folder in the default system explorer."""
-        download_dir = self.downloader.download_dir
-        if os.path.exists(download_dir):
-            open_directory(download_dir)
-            log = self.query_one("#log-panel", RichLog)
-            log.write(f"[dim]📂 Mở thư mục: {download_dir}[/dim]")
-            logger.info("Opened download directory: %s", download_dir)
+        dl_dir = self.downloader.download_dir
+        if os.path.exists(dl_dir):
+            open_directory(dl_dir)
+            self.query_one("#log-panel", RichLog).write(
+                f"[dim]📂 Mở thư mục: {dl_dir}[/dim]"
+            )
+            logger.info("Opened download directory: %s", dl_dir)
 
     def action_cancel(self) -> None:
-        """Cancel current operation and reset UI."""
         if self.is_analyzing or self.is_downloading:
             log = self.query_one("#log-panel", RichLog)
-            log.write("[yellow]⚠ Đang hủy...[/yellow]")
-            logger.info("Cancel requested. Cancelling workers.")
+            log.write("[bold #f9e2af]⚠  Đang hủy...[/bold #f9e2af]")
+            logger.info("Cancel requested.")
 
             if self.analysis_worker is not None:
                 self.analysis_worker.cancel()
@@ -573,17 +653,12 @@ class MediaDLApp(App):
 
             self.is_analyzing = False
             self.is_downloading = False
-
-            # Hide progress
             self.query_one("#progress-container").add_class("--hidden")
-
-            # Reset button
             btn = self.query_one("#analyze-btn", Button)
             btn.label = "⏎ Analyze"
             btn.remove_class("-analyzing")
 
-        # Also hide savedir input if open
+        # Close any open overlay rows
         self.query_one("#savedir-input-container").add_class("--hidden")
-
-        # Focus back to URL input
+        self.query_one("#cookie-container").add_class("--hidden")
         self.query_one("#url-input", Input).focus()

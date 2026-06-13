@@ -1,26 +1,75 @@
 /* ============================================================
-   MediaDL - Terminal UI Stylesheet
-   Dark terminal aesthetic with cyan accent
+   MediaDL — Terminal UI Stylesheet
+   Theme: Catppuccin Mocha
+   https://github.com/catppuccin/catppuccin
+   ============================================================
+   Palette:
+     base      #1e1e2e  (main background)
+     mantle    #181825  (slightly darker bg)
+     crust     #11111b  (darkest)
+     surface0  #313244  (panel bg)
+     surface1  #45475a  (borders / hover)
+     surface2  #585b70  (subtle text)
+     overlay0  #6c7086  (dimmed text)
+     text      #cdd6f4  (main text)
+     subtext1  #bac2de
+     subtext0  #a6adc8
+     mauve     #cba6f7  (accent / headings)
+     blue      #89b4fa
+     sapphire  #74c7ec
+     sky       #89dceb
+     teal      #94e2d5
+     green     #a6e3a1
+     yellow    #f9e2af
+     peach     #fab387
+     maroon    #eba0ac
+     red       #f38ba8
+     flamingo  #f2cdcd
    ============================================================ */
 
 /* ── Global ─────────────────────────────────────────────────── */
 
 Screen {
-    background: #0d1117;
-    color: #c9d1d9;
+    background: #1e1e2e;
+    color: #cdd6f4;
 }
 
 /* ── Header ─────────────────────────────────────────────────── */
 
 #app-header {
     dock: top;
-    height: 3;
-    background: #161b22;
-    color: #58a6ff;
+    height: 4;
+    background: #181825;
+    color: #cba6f7;
     text-align: center;
     padding: 1 0;
     text-style: bold;
-    border-bottom: solid #30363d;
+    border-bottom: solid #45475a;
+}
+
+/* ── Status bar ─────────────────────────────────────────────── */
+
+#status-bar {
+    dock: top;
+    height: 1;
+    background: #11111b;
+    padding: 0 2;
+    layout: horizontal;
+    align: left middle;
+    border-bottom: solid #313244;
+}
+
+#status-ffmpeg {
+    width: auto;
+}
+
+#status-sep {
+    width: auto;
+    color: #45475a;
+}
+
+#status-cookie {
+    width: auto;
 }
 
 /* ── URL Input Area ─────────────────────────────────────────── */
@@ -30,38 +79,40 @@ Screen {
     height: auto;
     max-height: 5;
     padding: 1 2;
-    background: #0d1117;
+    background: #1e1e2e;
     layout: horizontal;
 }
 
 #url-input {
     width: 1fr;
-    background: #161b22;
-    color: #e6edf3;
-    border: solid #30363d;
+    background: #313244;
+    color: #cdd6f4;
+    border: solid #45475a;
     padding: 0 1;
 }
 
 #url-input:focus {
-    border: solid #58a6ff;
+    border: solid #cba6f7;
+    background: #2a2a3d;
 }
 
 #analyze-btn {
     width: 14;
     margin-left: 1;
-    background: #238636;
-    color: #ffffff;
+    background: #a6e3a1;
+    color: #1e1e2e;
     text-style: bold;
     border: none;
     min-width: 14;
 }
 
 #analyze-btn:hover {
-    background: #2ea043;
+    background: #94e2d5;
 }
 
 #analyze-btn.-analyzing {
-    background: #6e40c9;
+    background: #cba6f7;
+    color: #1e1e2e;
 }
 
 /* ── Save Directory ─────────────────────────────────────────── */
@@ -71,36 +122,37 @@ Screen {
     height: auto;
     max-height: 3;
     padding: 0 2;
-    background: #0d1117;
+    background: #1e1e2e;
     layout: horizontal;
     align: left middle;
+    border-bottom: solid #313244;
 }
 
 #savedir-icon {
     width: auto;
-    color: #8b949e;
-    padding: 0 0;
+    color: #6c7086;
+    padding: 0;
 }
 
 #savedir-label {
     width: 1fr;
-    color: #58a6ff;
+    color: #89b4fa;
     padding: 0 1;
     text-style: bold;
 }
 
 #savedir-btn {
     width: 8;
-    background: #30363d;
-    color: #c9d1d9;
+    background: #45475a;
+    color: #cdd6f4;
     border: none;
     min-width: 8;
     height: 1;
 }
 
 #savedir-btn:hover {
-    background: #484f58;
-    color: #ffffff;
+    background: #585b70;
+    color: #cba6f7;
 }
 
 #savedir-input-container {
@@ -108,8 +160,9 @@ Screen {
     height: auto;
     max-height: 4;
     padding: 0 2 1 2;
-    background: #0d1117;
+    background: #181825;
     layout: horizontal;
+    border-bottom: solid #45475a;
 }
 
 #savedir-input-container.--hidden {
@@ -118,28 +171,102 @@ Screen {
 
 #savedir-input {
     width: 1fr;
-    background: #161b22;
-    color: #e6edf3;
-    border: solid #ffa657;
+    background: #313244;
+    color: #cdd6f4;
+    border: solid #f9e2af;
     padding: 0 1;
 }
 
 #savedir-input:focus {
-    border: solid #ffa657;
+    border: solid #f9e2af;
 }
 
 #savedir-ok-btn {
     width: 8;
     margin-left: 1;
-    background: #238636;
-    color: #ffffff;
+    background: #a6e3a1;
+    color: #1e1e2e;
     text-style: bold;
     border: none;
     min-width: 8;
 }
 
 #savedir-ok-btn:hover {
-    background: #2ea043;
+    background: #94e2d5;
+}
+
+#savedir-cancel-btn {
+    width: 8;
+    margin-left: 1;
+    background: #45475a;
+    color: #cdd6f4;
+    border: none;
+    min-width: 8;
+}
+
+#savedir-cancel-btn:hover {
+    background: #f38ba8;
+    color: #1e1e2e;
+}
+
+/* ── Cookie Settings ────────────────────────────────────────── */
+
+#cookie-container {
+    dock: top;
+    height: auto;
+    max-height: 5;
+    padding: 0 2 1 2;
+    background: #181825;
+    layout: horizontal;
+    align: left middle;
+    border-bottom: solid #45475a;
+}
+
+#cookie-container.--hidden {
+    display: none;
+}
+
+#cookie-label {
+    width: auto;
+    color: #f9e2af;
+    text-style: bold;
+    padding: 0 1 0 0;
+}
+
+#cookie-select {
+    width: 24;
+    background: #313244;
+    color: #cdd6f4;
+    border: solid #f9e2af;
+}
+
+#cookie-select:focus {
+    border: solid #cba6f7;
+}
+
+#cookie-ok-btn {
+    width: 12;
+    margin-left: 1;
+    background: #a6e3a1;
+    color: #1e1e2e;
+    text-style: bold;
+    border: none;
+}
+
+#cookie-ok-btn:hover {
+    background: #94e2d5;
+}
+
+#cookie-close-btn {
+    width: 8;
+    margin-left: 1;
+    background: #45475a;
+    color: #cdd6f4;
+    border: none;
+}
+
+#cookie-close-btn:hover {
+    background: #585b70;
 }
 
 /* ── Main Content ───────────────────────────────────────────── */
@@ -150,16 +277,32 @@ Screen {
     padding: 0 1;
 }
 
+/* ── Welcome Panel ──────────────────────────────────────────── */
+
+#welcome-panel {
+    height: 1fr;
+    margin: 1 1;
+    padding: 2 4;
+    background: #181825;
+    border: solid #313244;
+    content-align: center middle;
+    text-align: center;
+}
+
+#welcome-panel.--hidden {
+    display: none;
+}
+
 /* ── Media Info Panel ───────────────────────────────────────── */
 
 #info-panel {
     height: auto;
-    max-height: 10;
-    margin: 1 1;
-    padding: 1 2;
-    background: #161b22;
-    border: solid #30363d;
-    border-title-color: #58a6ff;
+    max-height: 8;
+    margin: 1 1 0 1;
+    padding: 0 2 1 2;
+    background: #181825;
+    border: solid #45475a;
+    border-title-color: #cba6f7;
     border-title-style: bold;
 }
 
@@ -174,18 +317,18 @@ Screen {
 
 .info-label {
     width: 14;
-    color: #8b949e;
+    color: #6c7086;
     text-style: bold;
 }
 
 .info-value {
     width: 1fr;
-    color: #e6edf3;
+    color: #cdd6f4;
 }
 
 .info-value-highlight {
     width: 1fr;
-    color: #ffa657;
+    color: #cba6f7;
     text-style: bold;
 }
 
@@ -193,11 +336,11 @@ Screen {
 
 #format-container {
     height: 1fr;
-    margin: 0 1;
+    margin: 1 1 0 1;
     padding: 0;
-    background: #0d1117;
-    border: solid #30363d;
-    border-title-color: #58a6ff;
+    background: #1e1e2e;
+    border: solid #45475a;
+    border-title-color: #89b4fa;
     border-title-style: bold;
 }
 
@@ -207,34 +350,34 @@ Screen {
 
 #format-table {
     height: 1fr;
-    background: #0d1117;
+    background: #1e1e2e;
 }
 
 #format-table > .datatable--header {
-    background: #161b22;
-    color: #58a6ff;
+    background: #181825;
+    color: #89b4fa;
     text-style: bold;
 }
 
 #format-table > .datatable--cursor {
-    background: #1f6feb;
-    color: #ffffff;
+    background: #45475a;
+    color: #cba6f7;
     text-style: bold;
 }
 
 #format-table > .datatable--hover {
-    background: #161b22;
+    background: #313244;
 }
 
 /* ── Log Panel ──────────────────────────────────────────────── */
 
 #log-panel {
     height: 1fr;
-    margin: 0 1;
+    margin: 1 1 0 1;
     padding: 1;
-    background: #0d1117;
-    border: solid #30363d;
-    border-title-color: #58a6ff;
+    background: #1e1e2e;
+    border: solid #313244;
+    border-title-color: #6c7086;
     border-title-style: bold;
     min-height: 8;
 }
@@ -246,8 +389,8 @@ Screen {
     height: auto;
     max-height: 5;
     padding: 1 2;
-    background: #161b22;
-    border-top: solid #30363d;
+    background: #181825;
+    border-top: solid #45475a;
 }
 
 #progress-container.--hidden {
@@ -255,99 +398,62 @@ Screen {
 }
 
 #progress-bar {
-    margin: 0 0;
-    color: #58a6ff;
+    margin: 0;
+    color: #a6e3a1;
 }
 
 #progress-bar Bar {
-    color: #238636;
-    background: #30363d;
+    color: #a6e3a1;
+    background: #313244;
 }
 
 #progress-bar PercentageStatus {
-    color: #e6edf3;
+    color: #cdd6f4;
     text-style: bold;
 }
 
 #progress-status {
     height: 1;
-    color: #8b949e;
+    color: #a6adc8;
     text-align: center;
     margin-top: 0;
 }
 
 /* ── Footer ─────────────────────────────────────────────────── */
 
-#app-footer {
-    dock: bottom;
-    height: 1;
-    background: #161b22;
-    color: #8b949e;
-    border-top: solid #30363d;
-    padding: 0 2;
+Footer {
+    background: #11111b;
+    color: #6c7086;
+    border-top: solid #313244;
 }
 
-.footer-key {
-    color: #58a6ff;
+Footer > .footer--key {
+    background: #313244;
+    color: #cba6f7;
     text-style: bold;
 }
 
-.footer-desc {
-    color: #8b949e;
+Footer > .footer--description {
+    color: #6c7086;
 }
 
-/* ── Welcome Message ────────────────────────────────────────── */
+/* ── Utility ────────────────────────────────────────────────── */
 
-#welcome-panel {
-    height: 1fr;
-    margin: 1 1;
-    padding: 2 4;
-    background: #161b22;
-    border: solid #30363d;
-    content-align: center middle;
-    text-align: center;
-}
-
-#welcome-panel.--hidden {
+.--hidden {
     display: none;
 }
 
-#welcome-title {
-    text-align: center;
-    color: #58a6ff;
-    text-style: bold;
-    margin-bottom: 1;
-}
-
-#welcome-subtitle {
-    text-align: center;
-    color: #8b949e;
-}
-
-/* ── Status Bar ─────────────────────────────────────────────── */
-
-#status-bar {
-    dock: bottom;
-    height: 1;
-    background: #161b22;
-    color: #8b949e;
-    padding: 0 2;
-    border-top: solid #30363d;
-}
-
-/* ── Error Styling ──────────────────────────────────────────── */
-
 .error-text {
-    color: #f85149;
+    color: #f38ba8;
     text-style: bold;
 }
 
 .success-text {
-    color: #3fb950;
+    color: #a6e3a1;
     text-style: bold;
 }
 
 .warning-text {
-    color: #d29922;
+    color: #f9e2af;
     text-style: bold;
 }

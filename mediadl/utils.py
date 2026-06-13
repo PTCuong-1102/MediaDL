@@ -2,7 +2,20 @@
 
 import re
 import os
+import shutil
+import sys
 from urllib.parse import urlparse
+
+
+# Latest Chrome User-Agent for bypassing bot detection
+CHROME_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
+)
+
+# Browsers supported for cookie extraction
+SUPPORTED_BROWSERS = ["chrome", "firefox", "edge", "opera", "safari", "brave", "chromium"]
 
 
 # Platform detection patterns
@@ -244,6 +257,113 @@ def open_directory(path: str) -> None:
 
 def is_ffmpeg_installed() -> bool:
     """Check if FFmpeg is installed and accessible on the system PATH."""
-    import shutil
     return shutil.which("ffmpeg") is not None
 
+
+def get_platform_headers(url: str) -> dict:
+    """Return HTTP headers tailored to bypass bot-detection for a given URL.
+
+    Sets a modern Chrome User-Agent and a platform-specific Referer so yt-dlp
+    appears as a legitimate browser request rather than a bot.
+
+    Args:
+        url: The media URL to analyse.
+
+    Returns:
+        Dict of HTTP headers to pass to yt-dlp's ``http_headers`` option.
+    """
+    platform = detect_platform(url)
+
+    # Per-platform Referer values
+    referer_map = {
+        "TikTok": "https://www.tiktok.com/",
+        "Instagram": "https://www.instagram.com/",
+        "Facebook": "https://www.facebook.com/",
+        "Twitter/X": "https://x.com/",
+        "Reddit": "https://www.reddit.com/",
+        "YouTube": "https://www.youtube.com/",
+        "Twitch": "https://www.twitch.tv/",
+        "Bilibili": "https://www.bilibili.com/",
+        "SoundCloud": "https://soundcloud.com/",
+        "Vimeo": "https://vimeo.com/",
+        "Dailymotion": "https://www.dailymotion.com/",
+        "Pinterest": "https://www.pinterest.com/",
+    }
+
+    headers = {
+        "User-Agent": CHROME_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+    }
+
+    if platform in referer_map:
+        headers["Referer"] = referer_map[platform]
+
+    return headers
+
+
+def get_available_browsers() -> list[str]:
+    """Return list of browsers whose cookies can be extracted on the current OS.
+
+    Checks which browsers are actually installed by looking for their executables
+    or profile directories.
+
+    Returns:
+        List of browser name strings (e.g. ['chrome', 'firefox', 'edge']).
+    """
+    available: list[str] = []
+
+    # Executable names per browser (checked on PATH)
+    exe_map = {
+        "chrome": ["google-chrome", "chrome", "google-chrome-stable"],
+        "firefox": ["firefox"],
+        "edge": ["msedge", "microsoft-edge"],
+        "opera": ["opera"],
+        "brave": ["brave-browser", "brave"],
+        "chromium": ["chromium", "chromium-browser"],
+    }
+
+    # On Windows, also check common install paths
+    win_paths = {
+        "chrome": [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ],
+        "firefox": [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+        ],
+        "edge": [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        ],
+        "brave": [
+            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+        ],
+    }
+
+    for browser in SUPPORTED_BROWSERS:
+        found = False
+        # Check PATH executables
+        for exe in exe_map.get(browser, [browser]):
+            if shutil.which(exe):
+                found = True
+                break
+        # Check Windows install paths
+        if not found and sys.platform == "win32":
+            for path in win_paths.get(browser, []):
+                if os.path.exists(path):
+                    found = True
+                    break
+        if found:
+            available.append(browser)
+
+    return available
