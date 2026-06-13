@@ -358,33 +358,75 @@ class MediaDLApp(App):
         """Map yt-dlp error messages to user-friendly Vietnamese messages."""
         msg_lower = error_msg.lower()
 
-        if "is not a valid url" in msg_lower or "unsupported url" in msg_lower:
-            self._log_error("URL không được hỗ trợ hoặc không hợp lệ.")
+        # Platforms that commonly need cookies to even be recognized
+        cookie_required_platforms = {"Facebook", "Instagram", "TikTok"}
+        needs_cookie_hint = not self.downloader.cookie_browser
+
+        if "login.php" in error_msg or "accounts.instagram.com/accounts/login" in error_msg:
+            # Facebook/Instagram redirect to login page → definitely needs cookies
+            self._log_error(
+                f"{platform} yêu cầu đăng nhập — đã chuyển về trang login thay vì video."
+            )
+            if needs_cookie_hint:
+                self._log_warning(
+                    f"💡 Nhấn [bold #f9e2af]Ctrl+K[/bold #f9e2af] → chọn browser "
+                    f"bạn đang dùng để đăng nhập {platform} → Áp dụng, rồi thử lại."
+                )
+            else:
+                self._log_warning(
+                    f"Cookie đã bật ({self.downloader.cookie_browser}) nhưng vẫn bị redirect login. "
+                    f"Hãy đảm bảo bạn đã đăng nhập {platform} trong browser đó và không dùng incognito."
+                )
+        elif "is not a valid url" in msg_lower or "unsupported url" in msg_lower:
+            if platform in cookie_required_platforms:
+                # For these platforms, 'unsupported' almost always means cookies needed
+                self._log_error(
+                    f"Không thể truy cập {platform} — nền tảng này yêu cầu đăng nhập "
+                    "để phân tích URL này."
+                )
+                if needs_cookie_hint:
+                    self._log_warning(
+                        f"💡 Nhấn [bold #f9e2af]Ctrl+K[/bold #f9e2af] → chọn browser "
+                        f"bạn đang dùng để đăng nhập {platform} → Áp dụng, rồi thử lại."
+                    )
+                else:
+                    self._log_warning(
+                        f"Cookie đã bật ({self.downloader.cookie_browser}) nhưng yt-dlp "
+                        "vẫn không nhận URL. Hãy đảm bảo bạn đã đăng nhập vào "
+                        f"{platform} trong browser đó và thử lại."
+                    )
+            else:
+                self._log_error(
+                    "URL không được hỗ trợ. Kiểm tra lại URL hoặc thử một link khác."
+                )
         elif "video unavailable" in msg_lower or "this video is unavailable" in msg_lower:
             self._log_error("Video không khả dụng (bị xóa hoặc bị ẩn riêng tư).")
-        elif "private" in msg_lower:
-            self._log_error("Video/bài đăng ở chế độ riêng tư.")
-            if not self.downloader.cookie_browser:
+        elif "private" in msg_lower or "restricted" in msg_lower:
+            self._log_error("Video/bài đăng ở chế độ riêng tư hoặc bị hạn chế.")
+            if needs_cookie_hint:
                 self._log_warning(
-                    f"💡 Thử bật Cookie từ browser của bạn qua [bold]Ctrl+K[/bold] để truy cập nội dung riêng tư."
+                    "💡 Nhấn [bold #f9e2af]Ctrl+K[/bold #f9e2af] → chọn browser "
+                    "đã đăng nhập vào nền tảng này → Áp dụng, rồi thử lại."
                 )
         elif "login" in msg_lower or "sign in" in msg_lower or "log in" in msg_lower:
             self._log_error(f"Video yêu cầu đăng nhập ({platform}).")
-            if not self.downloader.cookie_browser:
+            if needs_cookie_hint:
                 self._log_warning(
-                    "💡 Nhấn [bold #f9e2af]Ctrl+K[/bold #f9e2af] để bật Cookie từ browser — "
-                    "app sẽ dùng session đăng nhập của bạn."
+                    "💡 Nhấn [bold #f9e2af]Ctrl+K[/bold #f9e2af] → chọn browser "
+                    "đã đăng nhập vào nền tảng này → Áp dụng, rồi thử lại."
                 )
         elif "geo" in msg_lower or "country" in msg_lower or "region" in msg_lower:
             self._log_error("Video bị chặn theo vùng địa lý.")
         elif "copyright" in msg_lower or "removed" in msg_lower:
             self._log_error("Video bị xóa do vi phạm bản quyền.")
         elif "403" in error_msg or "forbidden" in msg_lower:
-            self._log_error("Truy cập bị từ chối (403).")
-            if not self.downloader.cookie_browser:
-                self._log_warning("💡 Thử bật Cookie qua [bold]Ctrl+K[/bold].")
+            self._log_error("Truy cập bị từ chối (403 Forbidden).")
+            if needs_cookie_hint:
+                self._log_warning(
+                    "💡 Thử bật Cookie qua [bold #f9e2af]Ctrl+K[/bold #f9e2af]."
+                )
         elif "429" in error_msg or "too many" in msg_lower:
-            self._log_error("Quá nhiều yêu cầu — bị giới hạn tốc độ (429). Thử lại sau ít phút.")
+            self._log_error("Quá nhiều yêu cầu — bị rate-limit (429). Thử lại sau vài phút.")
         elif "network" in msg_lower or "connection" in msg_lower or "timeout" in msg_lower:
             self._log_error("Lỗi mạng. Kiểm tra kết nối internet và thử lại.")
         else:

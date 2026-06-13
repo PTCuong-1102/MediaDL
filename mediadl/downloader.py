@@ -91,9 +91,10 @@ class Downloader:
         """
         ydl_opts = {
             "quiet": True,
-            "no_warnings": True,
+            "no_warnings": False,   # Keep warnings — they help detect login errors
             "extract_flat": False,
             "no_color": True,
+            "ignoreerrors": False,  # Raise exceptions so we can catch & display them
             # Browser-like headers to bypass bot detection
             "http_headers": get_platform_headers(url),
             # Bypass basic geo restrictions
